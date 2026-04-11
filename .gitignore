@@ -1,0 +1,16 @@
+node_modules
+.env
+npm-debug.log
+.DS_Store
+.git
+build
+dist
+node_modules
+package-lock.json
+*.log
+.cache
+.dest
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
