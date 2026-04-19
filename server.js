@@ -251,7 +251,11 @@ app.post('/api/chat', async (req, res) => {
     if (!fetchResponse.ok) {
       const errText = await fetchResponse.text();
       console.error("HuggingFace Error:", fetchResponse.status, errText);
-      return res.status(502).json({ error: "Upstream LLM Error" });
+      return res.status(502).json({ 
+        error: "Upstream LLM Error", 
+        status: fetchResponse.status,
+        details: errText 
+      });
     }
     
     const data = await fetchResponse.json();
