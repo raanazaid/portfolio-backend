@@ -219,6 +219,50 @@ app.post('/api/contact', async (req, res) => {
   }
 });
 
+// AI Chat proxy endpoint
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { inputs, parameters } = req.body;
+    
+    if (!process.env.HUGGINGFACE_API_KEY) {
+      console.error('LLM Key Configuration Missing: HUGGINGFACE_API_KEY not set.');
+      return res.status(500).json({ error: 'System Configuration Missing' });
+    }
+    
+    const hfEndpoint = process.env.HUGGINGFACE_ENDPOINT || "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3";
+    
+    const fetchResponse = await fetch(hfEndpoint, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        inputs: inputs,
+        parameters: parameters || {
+          max_new_tokens: 150,
+          temperature: 0.6,
+          return_full_text: false,
+        },
+        options: { wait_for_model: true }
+      })
+    });
+    
+    if (!fetchResponse.ok) {
+      const errText = await fetchResponse.text();
+      console.error("HuggingFace Error:", fetchResponse.status, errText);
+      return res.status(502).json({ error: "Upstream LLM Error" });
+    }
+    
+    const data = await fetchResponse.json();
+    res.json(data);
+    
+  } catch (error) {
+    console.error('Chat API error:', error);
+    res.status(500).json({ error: 'Failed to process AI request' });
+  }
+});
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
