@@ -13,7 +13,7 @@ const PORT = process.env.PORT || 3000;
 
 // Security middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Adjust as needed
+  contentSecurityPolicy: false,
   crossdomainXml: false,
   dnsPrefetch: false,
   frameguard: { action: 'deny' },
@@ -34,20 +34,16 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
-// Rate limiting to prevent abuse
+// Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // limit each IP to 5 requests per windowMs
-  message: {
-    success: false,
-    message: 'Too many requests from this IP, please try again later.'
-  },
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { success: false, message: 'Too many requests' },
   standardHeaders: true,
   legacyHeaders: false
 });
 app.use('/api/contact', limiter);
 
-// Validation function with XSS prevention
 const sanitizeInput = (input) => {
   if (!input) return input;
   return input
@@ -64,38 +60,14 @@ const validateInput = (name, email, message) => {
   const sanitizedEmail = sanitizeInput(email);
   const sanitizedMessage = sanitizeInput(message);
   
-  if (!sanitizedName || sanitizedName.trim().length === 0) {
-    errors.push('Name is required');
-  } else if (sanitizedName.trim().length > 100) {
-    errors.push('Name is too long');
-  }
-  
-  if (!sanitizedEmail || sanitizedEmail.trim().length === 0) {
-    errors.push('Email is required');
-  } else {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(sanitizedEmail)) {
-      errors.push('Email is not valid');
-    } else if (sanitizedEmail.length > 254) {
-      errors.push('Email is too long');
-    }
-  }
-  
-  if (!sanitizedMessage || sanitizedMessage.trim().length === 0) {
-    errors.push('Message is required');
-  } else {
-    const trimmedMessage = sanitizedMessage.trim();
-    if (trimmedMessage.length < 10) {
-      errors.push('Message must be at least 10 characters');
-    } else if (trimmedMessage.length > 5000) {
-      errors.push('Message is too long');
-    }
-  }
+  if (!sanitizedName || sanitizedName.trim().length === 0) errors.push('Name is required');
+  if (!sanitizedEmail || sanitizedEmail.trim().length === 0) errors.push('Email is required');
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) errors.push('Email is not valid');
+  if (!sanitizedMessage || sanitizedMessage.trim().length === 0) errors.push('Message is required');
   
   return { errors, sanitizedName, sanitizedEmail, sanitizedMessage };
 };
 
-// Create transporter
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   host: 'smtp.gmail.com',
@@ -105,214 +77,87 @@ const transporter = nodemailer.createTransport({
     user: process.env.GMAIL_USER,
     pass: process.env.GMAIL_APP_PASSWORD
   },
-  tls: {
-    ciphers: 'SSLv3'
-  }
+  tls: { ciphers: 'SSLv3' }
 });
 
-// Verify transporter
-transporter.verify((error) => {
-  if (error) {
-    console.error('Nodemailer transporter not ready:', error);
-  } else {
-    console.log('Nodemailer transporter is ready');
-  }
-});
-
-// Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: '1.0.0'
-  });
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Contact form endpoint
 app.post('/api/contact', async (req, res) => {
   try {
     const { name, email, message } = req.body;
-    
-    // Validate and sanitize input
     const { errors, sanitizedName, sanitizedEmail, sanitizedMessage } = validateInput(name, email, message);
-    if (errors.length > 0) {
-      return res.status(400).json({
-        success: false,
-        errors: errors
-      });
-    }
+    if (errors.length > 0) return res.status(400).json({ success: false, errors });
     
-    // Email options with professional formatting
     const mailOptions = {
       from: `"Portfolio Contact" <${process.env.GMAIL_USER}>`,
       to: process.env.GMAIL_USER,
       subject: `New Message from Portfolio Contact Form`,
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            h3 { color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
-            p { margin: 15px 0; }
-            strong { color: #2c3e50; }
-            pre { background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #3498db; }
-            small { color: #7f8c8d; }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h3>New Contact Form Submission</h3>
-            <p><strong>Name:</strong> ${sanitizedName}</p>
-            <p><strong>Email:</strong> ${sanitizedEmail}</p>
-            <p><strong>Message:</strong></p>
-            <pre>${sanitizedMessage}</pre>
-            <br>
-            <small>Sent from your portfolio contact form | ${new Date().toLocaleString()}</small>
-          </div>
-        </body>
-        </html>
-      `,
-      // Plain text alternative if HTML doesn't render
-      text: `New Contact Form Submission\nName: ${sanitizedName}\nEmail: ${sanitizedEmail}\nMessage: ${sanitizedMessage}`
+      text: `Name: ${sanitizedName}\nEmail: ${sanitizedEmail}\nMessage: ${sanitizedMessage}`
     };
     
-    // Send email
     const info = await transporter.sendMail(mailOptions);
-    
-    console.log('Message sent: %s', info.messageId);
-    
-    res.json({
-      success: true,
-      message: 'Message sent successfully!',
-      info: info.messageId,
-      timestamp: new Date().toISOString()
-    });
-    
+    res.json({ success: true, message: 'Message sent successfully!', info: info.messageId });
   } catch (error) {
     console.error('Error sending email:', error);
-    
-    // Handle specific Nodemailer errors
-    const errorMessage = error.message || 'Failed to send message';
-    
-    if (errorMessage.includes('Authentication credentials')) {
-      return res.status(500).json({
-        success: false,
-        message: 'Authentication failed. Please check your Gmail credentials and app password.'
-      });
-    }
-    
-    if (errorMessage.includes('Message rate limit exceeded')) {
-      return res.status(429).json({
-        success: false,
-        message: 'Rate limit exceeded. Please try again later.'
-      });
-    }
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send message. Please try again later.',
-      error: errorMessage
-    });
+    res.status(500).json({ success: false, message: 'Failed to send message.' });
   }
 });
 
-// AI Chat proxy endpoint
+// AI Chat proxy endpoint - CORRECTED VERSION
 app.post('/api/chat', async (req, res) => {
   try {
-    const { inputs, parameters } = req.body;
+    const { inputs } = req.body;
     
     if (!process.env.HUGGINGFACE_API_KEY) {
-      console.error('LLM Key Configuration Missing: HUGGINGFACE_API_KEY not set.');
+      console.error('HUGGINGFACE_API_KEY missing');
       return res.status(500).json({ error: 'System Configuration Missing' });
     }
+
+    // Use router subdomain for modern openai-compatible API
+    const hfEndpoint = "https://router.huggingface.co/v1/chat/completions";
+    const hfModel = "HuggingFaceH4/zephyr-7b-beta";
     
-    const hfEndpoint = process.env.HUGGINGFACE_ENDPOINT || "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
-    
-    const fetchResponse = await fetch(hfEndpoint, {
+    const response = await fetch(hfEndpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-        "Content-Type": "application/json",
-        "x-use-cache": "false"
+        "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        inputs: inputs,
-        parameters: parameters || {
-          max_new_tokens: 180,
-          temperature: 0.7,
-          return_full_text: false,
-        },
-        options: { wait_for_model: true }
+        model: hfModel,
+        messages: [
+          { role: "system", content: "You are an AI assistant for Raanan Zaid's portfolio. You are helpful, professional, and friendly." },
+          { role: "user", content: inputs }
+        ],
+        max_tokens: 200,
+        temperature: 0.7
       })
     });
     
-    if (!fetchResponse.ok) {
-      const errText = await fetchResponse.text();
-      console.error("HuggingFace Error:", fetchResponse.status, errText);
-      return res.status(502).json({ 
-        error: "Upstream LLM Error", 
-        status: fetchResponse.status,
-        model: hfEndpoint.split('/').pop(),
-        details: errText 
-      });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("HuggingFace Error:", response.status, errText);
+      return res.status(502).json({ error: "LLM Provider Error", status: response.status, details: errText });
     }
+
+    const result = await response.json();
+    const botReply = result.choices && result.choices[0] && result.choices[0].message 
+      ? result.choices[0].message.content 
+      : "I'm sorry, I couldn't generate a response.";
     
-    const data = await fetchResponse.json();
-    res.json(data);
-    
+    // Maintain frontend compatibility
+    return res.json([{ generated_text: botReply }]);
   } catch (error) {
     console.error('Chat API error:', error);
-    res.status(500).json({ error: 'Failed to process AI request' });
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    error: 'Route not found',
-    path: req.path,
-    method: req.method
-  });
-});
+app.use((req, res) => res.status(404).json({ error: 'Route not found' }));
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  
-  if (res.headersSent) {
-    return next(err);
-  }
-  
-  res.status(500).json({
-    error: 'Internal server error',
-    message: 'An unexpected error occurred',
-    requestId: req.headers['x-request-id'] || 'N/A'
-  });
-});
-
-// Start server
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📧 Contact form: POST http://localhost:${PORT}/api/contact`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-  });
-});
-
+const server = app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+process.on('SIGTERM', () => server.close());
+process.on('SIGINT', () => server.close());
 module.exports = app;
