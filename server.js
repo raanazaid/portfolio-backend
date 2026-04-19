@@ -229,19 +229,20 @@ app.post('/api/chat', async (req, res) => {
       return res.status(500).json({ error: 'System Configuration Missing' });
     }
     
-    const hfEndpoint = process.env.HUGGINGFACE_ENDPOINT || "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.3";
+    const hfEndpoint = process.env.HUGGINGFACE_ENDPOINT || "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2";
     
     const fetchResponse = await fetch(hfEndpoint, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "x-use-cache": "false"
       },
       body: JSON.stringify({
         inputs: inputs,
         parameters: parameters || {
-          max_new_tokens: 150,
-          temperature: 0.6,
+          max_new_tokens: 180,
+          temperature: 0.7,
           return_full_text: false,
         },
         options: { wait_for_model: true }
@@ -254,6 +255,7 @@ app.post('/api/chat', async (req, res) => {
       return res.status(502).json({ 
         error: "Upstream LLM Error", 
         status: fetchResponse.status,
+        model: hfEndpoint.split('/').pop(),
         details: errText 
       });
     }
